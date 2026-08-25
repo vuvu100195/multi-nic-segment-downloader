@@ -1,0 +1,29 @@
+## ForceBindIP installation
+
+ForceBindIP is required at runtime when the application binds aria2 to a chosen local IPv4 interface.
+
+ForceBindIP is a third-party freeware/proprietary tool. Its official project page does not provide a clearly identified open-source license or redistribution permission. Therefore, this repository does **not** bundle ForceBindIP binaries.
+
+### Install ForceBindIP
+
+1. Download ForceBindIP only from its official project page:
+
+   [https://r1ch.net/projects/forcebindip](https://r1ch.net/projects/forcebindip)
+
+2. Download the ZIP/manual-install version from the official source.
+3. Extract the official files into this project folder:
+
+   ```text
+   MultiNIC-Downloader\ForceBindIP\
+   ```
+
+4. Keep the official executable and DLL files together. The exact filenames depend on the downloaded release, but may include:
+
+   ```text
+   ForceBindIP\
+   ├─ ForceBindIP.exe
+   ├─ ForceBindIP64.exe
+   └─ BindIP.dll
+   ```
+
+Do not separate the ForceBindIP executable from `BindIP.dll`. ForceBindIP uses DLL injection, so Windows security software may show warnings. Download it only from the official website and review the original documentation before use.
