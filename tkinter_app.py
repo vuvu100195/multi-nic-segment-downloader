@@ -455,9 +455,13 @@ class DownloadManager:
             task.hash_status = f"{task.hash_algorithm}: {task.hash_value}"
         else:
             task.hash_status = "hash_cancelled"
+        
         task.status = "complete"
         task.hash_progress = 100 if value else task.hash_progress
         self.notify(task)
+        
+        # [CẬP NHẬT LOGIC]: Kích hoạt tải task tiếp theo sau khi tính HASH xong
+        self.start_waiting()
 
 
 class TkinterApp:
@@ -467,7 +471,11 @@ class TkinterApp:
         self.root = tk.Tk()
         self.root.title(self.t("app_title"))
         self.root.geometry("1180x880")
-        self.root.minsize(720, 520)
+        
+        self.root.minsize(800, 600) 
+        
+        self.setup_styles()
+        
         self.events = queue.Queue()
         self.cards = {}
         self.interfaces = []
@@ -480,6 +488,32 @@ class TkinterApp:
         self.refresh_interfaces()
         self.root.protocol("WM_DELETE_WINDOW", self.close)
         self.process_events()
+
+    def setup_styles(self):
+        self.style = ttk.Style(self.root)
+        
+        if sys.platform == "win32":
+            try:
+                self.style.theme_use("vista")
+            except tk.TclError:
+                pass
+        else:
+            try:
+                self.style.theme_use("clam")
+            except tk.TclError:
+                pass
+
+        default_font = ("Segoe UI", 10)
+        self.style.configure(".", font=default_font)
+        
+        self.style.configure("AppTitle.TLabel", font=("Segoe UI", 22, "bold"), foreground="#0f172a")
+        self.style.configure("Subtitle.TLabel", font=("Segoe UI", 10), foreground="#475569")
+        self.style.configure("Note.TLabel", font=("Segoe UI", 9, "italic"), foreground="#b45309")
+        self.style.configure("Summary.TLabel", font=("Segoe UI", 9, "bold"), foreground="#0284c7")
+        self.style.configure("Accent.TButton", font=("Segoe UI", 10, "bold"), foreground="#0f172a")
+        self.style.configure("CardTitle.TLabel", font=("Segoe UI", 11, "bold"), foreground="#1e293b")
+        self.style.configure("CardInfo.TLabel", font=("Segoe UI", 9), foreground="#64748b")
+        self.style.configure("CardHash.TLabel", font=("Consolas", 9), foreground="#0369a1")
 
     def t(self, key, **kwargs):
         return tr(self.language, key, **kwargs)
@@ -494,26 +528,18 @@ class TkinterApp:
     def build_ui(self):
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
-        outer = ttk.Frame(self.root)
-        outer.grid(row=0, column=0, sticky="nsew")
-        outer.columnconfigure(0, weight=1)
-        outer.rowconfigure(0, weight=1)
-        self.main_canvas = tk.Canvas(outer, highlightthickness=0)
-        self.main_canvas.grid(row=0, column=0, sticky="nsew")
-        scrollbar = ttk.Scrollbar(outer, orient="vertical", command=self.main_canvas.yview)
-        scrollbar.grid(row=0, column=1, sticky="ns")
-        self.main_canvas.configure(yscrollcommand=scrollbar.set)
-        main = ttk.Frame(self.main_canvas, padding=14)
-        self.main_window = self.main_canvas.create_window((0, 0), window=main, anchor="nw")
+        
+        main = ttk.Frame(self.root, padding=20)
+        main.grid(row=0, column=0, sticky="nsew")
         main.columnconfigure(0, weight=1)
-        main.bind("<Configure>", lambda _: self.main_canvas.configure(scrollregion=self.main_canvas.bbox("all")))
-        self.main_canvas.bind("<Configure>", lambda event: self.main_canvas.itemconfigure(self.main_window, width=event.width))
 
+        # HEADER
         header = ttk.Frame(main)
-        header.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 15))
         header.columnconfigure(0, weight=1)
-        self.register_text("app_title", ttk.Label(header, text=self.t("app_title"), font=("Segoe UI", 19, "bold"))).grid(row=0, column=0, sticky="w")
-        self.register_text("subtitle", ttk.Label(header, text=self.t("subtitle"), foreground="#555")).grid(row=1, column=0, sticky="w", pady=(2, 0))
+        self.register_text("app_title", ttk.Label(header, text=self.t("app_title"), style="AppTitle.TLabel")).grid(row=0, column=0, sticky="w")
+        self.register_text("subtitle", ttk.Label(header, text=self.t("subtitle"), style="Subtitle.TLabel")).grid(row=1, column=0, sticky="w", pady=(2, 0))
+        
         lang_box = ttk.Frame(header)
         lang_box.grid(row=0, column=1, sticky="e")
         self.register_text("language", ttk.Label(lang_box, text=self.t("language"))).pack(side="left", padx=(0, 6))
@@ -532,7 +558,8 @@ class TkinterApp:
         self.hash_algorithm_var = tk.StringVar(value=self.config["hash_algorithm"])
         self.summary_var = tk.StringVar()
 
-        form = ttk.LabelFrame(main, text=self.t("create_download"), padding=10)
+        # FORM
+        form = ttk.LabelFrame(main, text=self.t("create_download"), padding=15)
         form.grid(row=1, column=0, sticky="ew", pady=(8, 0))
         form.columnconfigure(1, weight=1)
         self.frame_widgets["create_download"] = form
@@ -541,7 +568,7 @@ class TkinterApp:
         self.add_field(form, 2, "file_name", self.filename_var)
 
         options = ttk.Frame(form)
-        options.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        options.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(12, 0))
         option_specs = [
             ("segments_per_card", self.segments_var, 1, 16, 6),
             ("parallel_tasks", self.parallel_var, 1, 4, 6),
@@ -558,27 +585,32 @@ class TkinterApp:
         hash_label.grid(row=0, column=8, sticky="w")
         self.option_labels["hash"] = hash_label
         ttk.Combobox(options, textvariable=self.hash_algorithm_var, values=("SHA256", "SHA1", "MD5"), state="readonly", width=8).grid(row=0, column=9, padx=(6, 0))
-        ttk.Label(options, textvariable=self.summary_var, foreground="#075985").grid(row=1, column=0, columnspan=10, sticky="w", pady=(7, 0))
+        
+        ttk.Label(options, textvariable=self.summary_var, style="Summary.TLabel").grid(row=1, column=0, columnspan=10, sticky="w", pady=(10, 0))
         self.segments_var.trace_add("write", lambda *_: self.update_summary())
         self.parallel_var.trace_add("write", lambda *_: self.update_summary())
 
-        nic_box = ttk.LabelFrame(main, text=self.t("network_cards"), padding=10)
-        nic_box.grid(row=2, column=0, sticky="ew", pady=(10, 8))
+        # NETWORK CARDS
+        nic_box = ttk.LabelFrame(main, text=self.t("network_cards"), padding=15)
+        nic_box.grid(row=2, column=0, sticky="ew", pady=(15, 10))
         self.frame_widgets["network_cards"] = nic_box
         self.nic_list = ttk.Frame(nic_box)
         self.nic_list.grid(row=0, column=0, sticky="w")
         controls = ttk.Frame(nic_box)
-        controls.grid(row=1, column=0, sticky="w", pady=(8, 0))
+        controls.grid(row=1, column=0, sticky="w", pady=(12, 0))
         self.register_text("rescan_cards", ttk.Button(controls, text=self.t("rescan_cards"), command=self.refresh_interfaces)).pack(side="left")
         self.register_text("diagnostics", ttk.Button(controls, text=self.t("diagnostics"), command=self.show_diagnostics)).pack(side="left", padx=7)
         self.register_text("components", ttk.Button(controls, text=self.t("components"), command=lambda: DependencyManager(self.root, self.t).open())).pack(side="left")
-        self.nic_status = ttk.Label(controls)
+        self.nic_status = ttk.Label(controls, font=("Segoe UI", 9, "bold"))
         self.nic_status.pack(side="left", padx=12)
 
-        self.register_text("note", ttk.Label(main, text=self.t("note"), foreground="#7c2d12")).grid(row=3, column=0, sticky="w", pady=(0, 7))
+        self.register_text("note", ttk.Label(main, text=self.t("note"), style="Note.TLabel")).grid(row=3, column=0, sticky="w", pady=(0, 10))
 
-        queue_box = ttk.LabelFrame(main, text=self.t("queue"), padding=8)
+        # QUEUE BOX
+        queue_box = ttk.LabelFrame(main, text=self.t("queue"), padding=12)
         queue_box.grid(row=4, column=0, sticky="nsew")
+        main.rowconfigure(4, weight=1)
+        
         self.frame_widgets["queue"] = queue_box
         queue_box.columnconfigure(0, weight=1)
         queue_box.rowconfigure(0, weight=1)
@@ -587,24 +619,31 @@ class TkinterApp:
         queue_bar = ttk.Scrollbar(queue_box, orient="vertical", command=self.queue_canvas.yview)
         queue_bar.grid(row=0, column=1, sticky="ns")
         self.queue_canvas.configure(yscrollcommand=queue_bar.set)
+        
         self.cards_frame = ttk.Frame(self.queue_canvas)
+        # [CẬP NHẬT UI]: Ép phần thẻ bên trong kéo giãn tối đa theo chiều ngang của Canvas
+        self.cards_frame.columnconfigure(0, weight=1)
+        
         self.queue_window = self.queue_canvas.create_window((0, 0), window=self.cards_frame, anchor="nw")
         self.cards_frame.bind("<Configure>", lambda _: self.queue_canvas.configure(scrollregion=self.queue_canvas.bbox("all")))
         self.queue_canvas.bind("<Configure>", lambda event: self.queue_canvas.itemconfigure(self.queue_window, width=event.width))
 
+        # BOTTOM BUTTONS
         bottom = ttk.Frame(main)
-        bottom.grid(row=5, column=0, sticky="ew", pady=(10, 0))
-        bottom.columnconfigure(0, weight=1)
-        self.register_text("add_queue", ttk.Button(bottom, text=self.t("add_queue"), command=self.add_download)).grid(row=0, column=0, sticky="ew")
-        self.register_text("open_output", ttk.Button(bottom, text=self.t("open_output"), command=self.open_output)).grid(row=0, column=1, padx=7)
-        self.register_text("save_settings", ttk.Button(bottom, text=self.t("save_settings"), command=self.persist_config)).grid(row=0, column=2, padx=7)
-        self.register_text("exit", ttk.Button(bottom, text=self.t("exit"), command=self.close)).grid(row=0, column=3)
+        bottom.grid(row=5, column=0, sticky="ew", pady=(15, 0))
+        bottom.columnconfigure(0, weight=1) 
+        ttk.Frame(bottom).grid(row=0, column=0, sticky="ew") # Spacer
+        
+        self.register_text("add_queue", ttk.Button(bottom, text=self.t("add_queue"), command=self.add_download, style="Accent.TButton")).grid(row=0, column=1, padx=(0, 7))
+        self.register_text("open_output", ttk.Button(bottom, text=self.t("open_output"), command=self.open_output)).grid(row=0, column=2, padx=7)
+        self.register_text("save_settings", ttk.Button(bottom, text=self.t("save_settings"), command=self.persist_config)).grid(row=0, column=3, padx=7)
+        self.register_text("exit", ttk.Button(bottom, text=self.t("exit"), command=self.close)).grid(row=0, column=4)
 
     def add_field(self, parent, row, key, variable, command=None):
-        self.register_text(key, ttk.Label(parent, text=self.t(key))).grid(row=row, column=0, sticky="w", pady=4)
-        ttk.Entry(parent, textvariable=variable).grid(row=row, column=1, sticky="ew", pady=4)
+        self.register_text(key, ttk.Label(parent, text=self.t(key))).grid(row=row, column=0, sticky="w", pady=6)
+        ttk.Entry(parent, textvariable=variable, font=("Segoe UI", 10)).grid(row=row, column=1, sticky="ew", pady=6)
         if command:
-            self.register_text(f"browse_{key}", ttk.Button(parent, text=self.t("browse"), command=command)).grid(row=row, column=2, padx=(7, 0), pady=4)
+            self.register_text(f"browse_{key}", ttk.Button(parent, text=self.t("browse"), command=command)).grid(row=row, column=2, padx=(10, 0), pady=6)
 
     def change_language(self, _event=None):
         self.language = normalize_language(self.language_var.get())
@@ -633,16 +672,23 @@ class TkinterApp:
         self.interfaces = get_network_interfaces()
         self.interface_vars = []
         if not self.interfaces:
-            ttk.Label(self.nic_list, text=self.t("no_cards"), foreground="#b45309").pack(anchor="w")
+            ttk.Label(self.nic_list, text=self.t("no_cards"), foreground="#b45309", font=("Segoe UI", 10, "bold")).pack(anchor="w")
             self.nic_status.configure(text=self.t("no_cards"))
             self.update_summary()
             return
-        for row, interface in enumerate(self.interfaces):
+            
+        columns = 4 
+        for index, interface in enumerate(self.interfaces):
             variable = tk.BooleanVar(value=interface["ip"] in selected if selected else True)
             variable.trace_add("write", lambda *_: self.update_summary())
             self.interface_vars.append((variable, interface))
-            ttk.Checkbutton(self.nic_list, text=f"{interface['name']} — {interface['ip']}", variable=variable).grid(row=row, column=0, sticky="w", pady=2)
-        self.nic_status.configure(text=self.t("cards_found", count=len(self.interfaces)))
+            
+            row = index // columns
+            col = index % columns
+            
+            ttk.Checkbutton(self.nic_list, text=f"{interface['name']} — {interface['ip']}", variable=variable).grid(row=row, column=col, sticky="w", padx=(0, 25), pady=3)
+            
+        self.nic_status.configure(text=self.t("cards_found", count=len(self.interfaces)), foreground="#15803d")
         self.update_summary()
 
     def selected_interfaces(self):
@@ -735,35 +781,55 @@ class TkinterApp:
         save_config(self.config)
 
     def create_card(self, task):
-        card = ttk.LabelFrame(self.cards_frame, text=self.t("task_number", number=task.number), padding=9)
-        card.grid(row=len(self.cards), column=0, sticky="ew", pady=6)
+        # [CẬP NHẬT UI]: Tái cấu trúc Layout của thẻ
+        card = ttk.LabelFrame(self.cards_frame, text=self.t("task_number", number=task.number), padding=12)
+        card.grid(row=task.number, column=0, sticky="ew", pady=(0, 10))
+        
+        # Chia thẻ thành 2 cột: Cột 0 (trái, giãn rộng), Cột 1 (phải)
         card.columnconfigure(0, weight=1)
-        title = ttk.Label(card, font=("Segoe UI", 10, "bold"))
+        card.columnconfigure(1, weight=1)
+        
+        # Dòng 1: Tiêu đề (Trái) & Trạng thái (Phải)
+        title = ttk.Label(card, style="CardTitle.TLabel")
         title.grid(row=0, column=0, sticky="w")
-        folder = ttk.Label(card, foreground="#555")
-        folder.grid(row=1, column=0, sticky="w")
-        status = ttk.Label(card)
-        status.grid(row=2, column=0, sticky="w", pady=(4, 0))
+        status = ttk.Label(card, font=("Segoe UI", 10, "bold"))
+        status.grid(row=0, column=1, sticky="e") # Ép sát lề phải
+        
+        # Dòng 2: Đường dẫn thư mục
+        folder = ttk.Label(card, style="CardInfo.TLabel")
+        folder.grid(row=1, column=0, columnspan=2, sticky="w", pady=(2, 0))
+        
+        # Dòng 3: Thanh Progress Bar giãn full chiều ngang
         progress = ttk.Progressbar(card, maximum=100)
-        progress.grid(row=3, column=0, sticky="ew", pady=5)
-        details = ttk.Label(card)
-        details.grid(row=4, column=0, sticky="w")
-        hash_label = ttk.Label(card, foreground="#164e63", wraplength=1000)
-        hash_label.grid(row=5, column=0, sticky="w", pady=(4, 0))
-        parts = ttk.Label(card, foreground="#555", wraplength=1000, justify="left")
-        parts.grid(row=6, column=0, sticky="w", pady=(3, 0))
+        progress.grid(row=2, column=0, columnspan=2, sticky="ew", pady=8)
+        
+        # Dòng 4: Chi tiết (Tốc độ, %...)
+        details = ttk.Label(card, font=("Segoe UI", 9, "bold"), foreground="#0f172a")
+        details.grid(row=3, column=0, columnspan=2, sticky="w")
+        
+        # Dòng 5: Mã HASH
+        hash_label = ttk.Label(card, style="CardHash.TLabel", wraplength=1000)
+        hash_label.grid(row=4, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        
+        # Dòng 6: Chi tiết Part mạng
+        parts = ttk.Label(card, style="CardInfo.TLabel", wraplength=1000, justify="left")
+        parts.grid(row=5, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        
+        # Dòng 7: Nút bấm (Đưa sang góc phải)
         actions = ttk.Frame(card)
-        actions.grid(row=7, column=0, sticky="w", pady=(7, 0))
+        actions.grid(row=6, column=0, columnspan=2, sticky="e", pady=(10, 0)) # Ép sát lề phải
+        
         toggle = ttk.Button(actions, command=lambda item=task: self.toggle_task(item))
         toggle.pack(side="left")
         stop = ttk.Button(actions, command=lambda item=task: self.manager.stop(item))
-        stop.pack(side="left", padx=6)
+        stop.pack(side="left", padx=8)
         copy = ttk.Button(actions, command=lambda item=task: self.copy_hash(item))
         copy.pack(side="left")
         folder_button = ttk.Button(actions, command=lambda item=task: self.open_folder(item.output_dir))
-        folder_button.pack(side="left", padx=6)
+        folder_button.pack(side="left", padx=8)
         remove = ttk.Button(actions, command=lambda item=task: self.remove_task(item))
         remove.pack(side="left")
+        
         self.cards[task.number] = {"frame": card, "title": title, "folder": folder, "status": status, "progress": progress, "details": details, "hash": hash_label, "parts": parts, "toggle": toggle, "stop": stop, "copy": copy, "folder_button": folder_button, "remove": remove}
 
     def refresh_card(self, task):
@@ -775,12 +841,20 @@ class TkinterApp:
         status_text = self.t(task.status) if task.status in TRANSLATIONS["en"] else task.status
         if task.error:
             status_text += f" — {self.t(task.error) if task.error in TRANSLATIONS['en'] else task.error}"
+        
+        if task.status == "complete":
+            card["status"].configure(text=status_text, foreground="#15803d")
+        elif task.error or task.status == "error":
+            card["status"].configure(text=status_text, foreground="#b91c1c")
+        else:
+            card["status"].configure(text=status_text, foreground="#0369a1")
+            
         eta = (task.total_size - task.downloaded) / task.speed_bps if task.speed_bps > 0 else None
         card["title"].configure(text=task.filename)
         card["folder"].configure(text=f"{self.t('save_to')}: {task.output_dir}")
-        card["status"].configure(text=status_text)
         card["progress"].configure(value=percent)
         card["details"].configure(text=f"{percent:.1f}% | {format_bytes(task.downloaded)} / {format_bytes(task.total_size)} | {format_speed(task.speed_bps)} | ETA: {format_eta(eta)} | {self.t('segments')}: {task.completed_segments}/{task.total_segments}")
+        
         if task.hash_value:
             hash_text = f"{task.hash_algorithm}: {task.hash_value}"
         else:
@@ -788,6 +862,7 @@ class TkinterApp:
             if task.status == "hashing":
                 hash_text += f" ({task.hash_progress}%)"
         card["hash"].configure(text=hash_text)
+        
         lines = []
         for part in task.parts:
             part_percent = part.downloaded / part.total_size * 100 if part.total_size else 0.0
@@ -798,6 +873,7 @@ class TkinterApp:
                 states.append(self.t("error_count", count=part.error_count))
             suffix = f" | {', '.join(states)}" if states else ""
             lines.append(f"{self.t('part')} {part.index + 1} — {part.interface['name']} ({part.interface['ip']}): {part.complete_count}/{len(part.segments)} {self.t('segments')}, {part_percent:.1f}%, {format_speed(part.speed_bps)}{suffix}")
+        
         card["parts"].configure(text="\n".join(lines) if lines else self.t("checking_range"))
         card["toggle"].configure(text=self.t("pause") if task.status in {"downloading", "retrying"} else self.t("resume"), state="normal" if task.status in {"downloading", "retrying", "paused", "stopped", "error"} else "disabled")
         card["stop"].configure(text=self.t("stop"), state="normal" if task.status in {"downloading", "retrying", "paused", "merging", "hashing"} else "disabled")
@@ -824,6 +900,9 @@ class TkinterApp:
         card = self.cards.pop(task.number, None)
         if card:
             card["frame"].destroy()
+            
+        # Thêm check để phòng trường hợp xóa task đang pause/error thì phải start task khác lên thay
+        self.manager.start_waiting()
 
     def toggle_task(self, task):
         if task.status in {"downloading", "retrying"}:
